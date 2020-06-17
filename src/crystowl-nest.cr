@@ -8,11 +8,25 @@ module Crystowl
   class GroceryList
     @content = {} of String => Int32
 
+    def dump
+      str = "Liste:\n"
+      @content.each do |index, value|
+        str += "#{index}: #{value}\n"
+      end
+      return str
+    end
+
+    def add_item(item, amount)
+      if @content[item]?
+        @content[item] += amount
+      else
+        @content[item] = amount
+      end
+    end
+
   end
 
   class GroceryMenu < Tourmaline::RoutedMenu
-
-    @grocery_list = GroceryList.new
 
     def initialize(@routes = {} of String => Page,
                    start_route = "/",
@@ -20,23 +34,31 @@ module Crystowl
       @current_route = self.class.hash_route(start_route)
       @route_history = [@current_route]
       @event_handler = Tourmaline::CallbackQueryHandler.new(/(?:amount|route):(\S+)/, group: group) do |ctx|
-        puts ctx.match
 
         if match = ctx.match
           command = match[0].split(":")[0]
-          puts command
           
           if command == "amount"
-            puts match[1].to_i
+            item = @routes[@current_route].content.split("\n")[-1]
+            amount = match[1].to_i
+
+            Greeter.add_item(item, amount)
+            str = format_text_addition(item, amount)
+            ctx.query.answer(str)
+            Greeter.update_message
+
             pseudo_handle(ctx)
 
           elsif command == "route"
-            puts "Handling..."
             handle_button_click(ctx)
-
+            
           end
         end
       end
+    end
+
+    def format_text_addition(item, amount)
+      return "#{amount} x #{item} hinzugefügt."
     end
 
     def pseudo_handle(ctx)
@@ -67,50 +89,108 @@ module Crystowl
   end
 
   class Greeter < Tourmaline::Client
+
+    @@grocery_list = GroceryList.new
+    @@message : Tourmaline::Message | Nil
+
+    def self.add_item(item, amount)
+      @@grocery_list.add_item(item, amount)
+    end
+
+    def self.update_message
+      @@message.try &. edit_text(@@grocery_list.dump)
+    end
+
+    macro new_route(grocery_list, name, title, columns, items, back = false, back_text = "", generate_items = false, max_items = 3)
+      route {{name}} do
+        content {{title}}
+        buttons(columns: {{columns}}) do
+          {% for index, item in items %}
+            route_button {{item}}, to: {{name}} + {{index}}
+          {% end %}
+
+          {% if back %}
+            back_button {{back_text}}
+          {% end %}
+        end
+      end
+
+      {% if generate_items %}
+        {% for index, item in items %}
+          route_items({{grocery_list}}, {{name}} + {{index}}, {{item}}, {{columns}}, {{max_items}}, back: true, back_text: {{back_text}})
+        {% end %}
+      {% end %}
+    end
+
+    macro route_items(grocery_list, name, title, columns, max_items, back = false, back_text = "")
+      route {{name}} do
+        content {{title}}
+        buttons(columns: {{columns}}) do
+          {% for i in (1..max_items) %}
+            callback_button {{i.stringify}}, "amount:" + {{i.stringify}}
+          {% end %}
+
+          {% if back %}
+            back_button {{back_text}}
+          {% end %}
+        end
+      end
+    end
     
-    MY_MENU = GroceryMenu.build do
-      route "/" do
-        content "Bitte wähle eine Kategorie."
-        buttons(columns: 3) do
-          route_button "Essen", to: "/food"
-          route_button "Getränke", to: "/drinks"
-          route_button "Andere", to: "/custom"
-        end
-      end
+    MENU = GroceryMenu.build do
 
-      route "/food" do
-        content "Essen"
-        buttons(columns: 3) do
-          route_button "Nudeln", to: "/food/noodles"
-          route_button "Reis", to: "/food/rice"
-          route_button "Toast", to: "/food/toast"
-        end
-      end
+      new_route(@@grocery_list, "/", "Bitte wähle eine Kategorie.", 3, {
 
-      route "/drinks" do
-        content "Getränke"
-        buttons(columns: 3) do
-          route_button "Wasser", to: "/drinks/water"
-          route_button "Apfelsaft", to: "/drinks/applejuice"
-          route_button "Milch", to: "/drinks/milk"
-        end
-      end
+        "food" => "Essen", 
+        "drinks" => "Getränke",
+        "household" => "Haushalt",
 
-      route "/food/noodles" do
-        content "Nudeln"
-        buttons(columns: 3) do
-          callback_button "1", "amount:1"
-          callback_button "2", "amount:2"
-          callback_button "3", "amount:3"
-          back_button "Zurück"
-        end
-      end
+        "custom" => "Andere"
+
+      })
+
+      new_route(@@grocery_list, "/food", "Essen", 3, {
+
+        "/noodles" => "Nudeln", 
+        "/rice" => "Reis", 
+        "/toast" => "Toast",
+
+        "/butter" => "Butter",
+        "/cuts" => "Aufschnitt",
+        "/ketchup" => "Ketchup"
+
+      }, back: true, back_text: "Zurück", generate_items: true, max_items: 3)
+
+      new_route(@@grocery_list, "/drinks", "Getränke", 3, {
+
+        "/water" => "Wasser", 
+        "/juice" => "Saft", 
+        "/milk" => "Milch",
+
+        "/coke" => "Cola",
+        "/tea" => "Tee",
+        "/icetea" => "Eistee"
+
+      }, back: true, back_text: "Zurück", generate_items: true, max_items: 3)
+
+      new_route(@@grocery_list, "/household", "Haushalt", 3, {
+
+        "/toiletpaper" => "Klopapier",
+        "/tissue" => "Küchentuch",
+        "/soap" => "Seife",
+
+        "/sponge" => "Schwämme",
+        "/dishwashertab" => "Spültabs",
+        "/washing" => "Waschmittel"
+
+      }, back: true, back_text: "Zurück", generate_items: true, max_items: 3)
 
     end
 
     @[Command("start")]
     def start_command(ctx)
-      ctx.message.respond_with_menu(MY_MENU)
+      @@message = ctx.message.respond("Liste:")
+      ctx.message.respond_with_menu(MENU)
     end
 
   end
