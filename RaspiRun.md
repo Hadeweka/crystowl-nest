@@ -160,8 +160,8 @@ Debug versions might yield lengthy weird error messages for some reason, so just
 Set your Telegram Bot API Key (replace ```XXX:XXX``` with the actual key here) and run it:
 
 ```console
-export CRYSTOWL_API_KEY=XXX:XXX
-./crystowl-nest
+user@raspbian:~/Dev/crystowl-nest$ export CRYSTOWL_API_KEY=XXX:XXX
+user@raspbian:~/Dev/crystowl-nest$ ./crystowl-nest
 ```
 
 Done!
