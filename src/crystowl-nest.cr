@@ -13,15 +13,18 @@ module Crystowl
       @content.each do |index, value|
         str += "#{index}: #{value}\n"
       end
-      return str
+      return str[0..4095]
     end
 
     def add_item(item, amount)
-      if @content[item]?
-        @content[item] += amount
+      cut_item = item[0..99]
+
+      if @content[cut_item]?
+        @content[cut_item] += amount
       else
-        @content[item] = amount
+        @content[cut_item] = amount
       end
+      @content[cut_item].clamp(0..999)
     end
 
   end
@@ -33,7 +36,7 @@ module Crystowl
                    group = Tourmaline::Helpers.random_string(8))
       @current_route = self.class.hash_route(start_route)
       @route_history = [@current_route]
-      @event_handler = Tourmaline::CallbackQueryHandler.new(/(?:amount|route):(\S+)/, group: group) do |ctx|
+      @event_handler = Tourmaline::CallbackQueryHandler.new(/(?:amount|route|final|refresh|custom):(\S+)/, group: group) do |ctx|
 
         if match = ctx.match
           command = match[0].split(":")[0]
@@ -51,9 +54,22 @@ module Crystowl
 
           elsif command == "route"
             handle_button_click(ctx)
+
+          elsif command == "final"
+            Greeter.delete_message_and_menu
+            Greeter.disable_custom_add
+            Greeter.send_command_message
+
+          elsif command == "refresh"
+            Greeter.update_message
+
+          elsif command == "custom"
+            ctx.query.answer("Bitte Namen des Artikels eingeben")
+            Greeter.enable_custom_add
             
           end
         end
+
       end
     end
 
@@ -90,28 +106,89 @@ module Crystowl
 
   class Greeter < Tourmaline::Client
 
+    HELP_TEXT = "Kommandos:\n/start - Fügt Artikel hinzu\n/check - Entfernt Artikel\n/help - Ruft diese Hilfe auf"
+    ANSWER_TEXT = "Anfrage für Registrierung ist erfolgt."
+
     @@grocery_list = GroceryList.new
+    
+    # TODO: Make all of these user-specific!
+
+    @@user_message : Tourmaline::Message | Nil
     @@message : Tourmaline::Message | Nil
+    @@menu : Tourmaline::Message | Nil
+
+    @@accepts_addition = false
+
+    @@user_messages = {} of Int64 => Tourmaline::Message | Nil
+    @@messages = {} of Int64 => Tourmaline::Message | Nil
+    @@menus = {} of Int64 => Tourmaline::Message | Nil
+
+    @additions_enabled = {} of Int64 => Bool
 
     def self.add_item(item, amount)
       @@grocery_list.add_item(item, amount)
     end
 
     def self.update_message
-      @@message.try &. edit_text(@@grocery_list.dump)
+      begin
+        @@message.try &. edit_text(@@grocery_list.dump)
+      rescue ex : Tourmaline::Error
+        puts "ERROR: #{ex.message}"
+      end
     end
 
-    macro new_route(grocery_list, name, title, columns, items, back = false, back_text = "", generate_items = false, max_items = 3)
+    def self.delete_message_and_menu
+      @@message.try &. delete
+      @@menu.try &. delete
+    end
+
+    def self.send_command_message
+      @@user_message.try &. respond(HELP_TEXT)
+    end
+
+    def self.enable_custom_add
+      @@accepts_addition = true
+    end
+
+    def self.disable_custom_add
+      @@accepts_addition = false
+    end
+
+    def self.is_custom_add
+      return @@accepts_addition
+    end
+
+    macro new_route(grocery_list, name, title, columns, items, 
+      back = false, back_text = "", 
+      generate_items = false, max_items = 3, 
+      final = false, final_text = "", 
+      refresh = false, refresh_text = "",
+      custom = false, custom_text = "")
+
       route {{name}} do
         content {{title}}
         buttons(columns: {{columns}}) do
+
           {% for index, item in items %}
             route_button {{item}}, to: {{name}} + {{index}}
+          {% end %}
+
+          {% if custom %}
+            callback_button {{custom_text}}, "custom:true"
           {% end %}
 
           {% if back %}
             back_button {{back_text}}
           {% end %}
+
+          {% if refresh %}
+            callback_button {{refresh_text}}, "refresh:true"
+          {% end %}
+
+          {% if final %}
+            callback_button {{final_text}}, "final:true"
+          {% end %}
+
         end
       end
 
@@ -126,6 +203,7 @@ module Crystowl
       route {{name}} do
         content {{title}}
         buttons(columns: {{columns}}) do
+
           {% for i in (1..max_items) %}
             callback_button {{i.stringify}}, "amount:" + {{i.stringify}}
           {% end %}
@@ -133,6 +211,7 @@ module Crystowl
           {% if back %}
             back_button {{back_text}}
           {% end %}
+
         end
       end
     end
@@ -143,11 +222,10 @@ module Crystowl
 
         "food" => "Essen", 
         "drinks" => "Getränke",
-        "household" => "Haushalt",
+        "spice" => "Gewürze",
+        "household" => "Haushalt"
 
-        "custom" => "Andere"
-
-      })
+      }, custom: true, custom_text: "Andere", final: true, final_text: "Fertig", refresh: true, refresh_text: "Update")
 
       new_route(@@grocery_list, "/food", "Essen", 3, {
 
@@ -156,8 +234,16 @@ module Crystowl
         "/toast" => "Toast",
 
         "/butter" => "Butter",
-        "/cuts" => "Aufschnitt",
-        "/ketchup" => "Ketchup"
+        "/sausage" => "Wurst",
+        "/cheese" => "Käse",
+
+        "/meat" => "Fleisch",
+        "/salad" => "Salat",
+        "/fruit" => "Obst",
+
+        "/onions" => "Zwiebeln",
+        "/bell" => "Paprika",
+        "/carrot" => "Möhren"
 
       }, back: true, back_text: "Zurück", generate_items: true, max_items: 3)
 
@@ -170,6 +256,18 @@ module Crystowl
         "/coke" => "Cola",
         "/tea" => "Tee",
         "/icetea" => "Eistee"
+
+      }, back: true, back_text: "Zurück", generate_items: true, max_items: 3)
+
+      new_route(@@grocery_list, "/spice", "Gewürze", 3, {
+
+        "/salt" => "Salz",
+        "/pepper" => "Pfeffer",
+        "/herbs" => "Kräuter",
+
+        "/ketchup" => "Ketchup",
+        "/sauces" => "Saucen",
+        "/chili" => "Chili"
 
       }, back: true, back_text: "Zurück", generate_items: true, max_items: 3)
 
@@ -189,8 +287,52 @@ module Crystowl
 
     @[Command("start")]
     def start_command(ctx)
-      @@message = ctx.message.respond("Liste:")
-      ctx.message.respond_with_menu(MENU)
+      @@user_message = ctx.message
+      @@message = ctx.message.respond("Lädt Liste...")
+      Greeter.update_message
+      @@menu = ctx.message.respond_with_menu(MENU)
+    end
+
+    @[Command("help")]
+    def help_command(ctx)
+      ctx.message.respond(HELP_TEXT)
+    end
+
+    @[Command("register")]
+    def register_command(ctx)
+      if user = ctx.message.from
+        puts "New user wants to register:"
+        if username = user.try &. username
+          puts "User: " + username
+        end
+        puts "Name: " + user.try &. full_name
+        puts "ID: " + user.try &. id.to_s
+        ctx.message.respond(ANSWER_TEXT)
+      end
+    end
+
+    @[Hears(/^\s*([\w\-äöüÄÖÜßéèÈÉáàÀÁêÊ][\w\-äöüÄÖÜßÈÉáàÀÁêÊ\s]*)$/)]
+    def on_addition(ctx)
+      if @@accepts_addition
+        if text = ctx.message.text
+          number = 1
+          article = ""
+          split_text = text.strip.split
+          
+          if split_text[-1].to_i?
+            number = split_text[-1].to_i
+            article = split_text[0..-2].join(" ")
+          else
+            article = split_text.join(" ")
+          end
+
+          @@grocery_list.add_item(article, number)
+
+          Greeter.disable_custom_add
+          Greeter.update_message
+          ctx.message.delete
+        end
+      end
     end
 
   end
