@@ -2,15 +2,16 @@ name: crystowl-nest
 version: 0.1.0
 
 authors:
-  - your-name-here <your-email-here>
+  - Hadeweka
 
 targets:
   crystowl-nest:
     main: src/crystowl-nest.cr
 
 dependencies:
-  crystowl:
-    github: Hadeweka/crystowl
+  tourmaline:
+    github: protoncr/tourmaline
+    branch: master
 
 crystal: 0.35.0
 

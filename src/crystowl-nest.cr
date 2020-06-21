@@ -1,5 +1,4 @@
-require "crystowl"
-
+require "tourmaline"
 require "tourmaline/extra/routed_menu"
 
 # TODO: Write documentation for `Crystowl`
@@ -38,6 +37,8 @@ module Crystowl
       @route_history = [@current_route]
       @event_handler = Tourmaline::CallbackQueryHandler.new(/(?:amount|route|final|refresh|custom):(\S+)/, group: group) do |ctx|
 
+        user_id = ctx.query.from.id
+
         if match = ctx.match
           command = match[0].split(":")[0]
           
@@ -45,10 +46,10 @@ module Crystowl
             item = @routes[@current_route].content.split("\n")[-1]
             amount = match[1].to_i
 
-            Greeter.add_item(item, amount)
+            ChatBotInstance.add_item(item, amount)
             str = format_text_addition(item, amount)
             ctx.query.answer(str)
-            Greeter.update_message
+            ChatBotInstance.update_message(user_id)
 
             pseudo_handle(ctx)
 
@@ -56,16 +57,16 @@ module Crystowl
             handle_button_click(ctx)
 
           elsif command == "final"
-            Greeter.delete_message_and_menu
-            Greeter.disable_custom_add
-            Greeter.send_command_message
+            ChatBotInstance.delete_message_and_menu(user_id)
+            ChatBotInstance.disable_custom_add(user_id)
+            ChatBotInstance.send_command_message(user_id)
 
           elsif command == "refresh"
-            Greeter.update_message
+            ChatBotInstance.update_message(user_id)
 
           elsif command == "custom"
             ctx.query.answer("Bitte Namen des Artikels eingeben")
-            Greeter.enable_custom_add
+            ChatBotInstance.enable_custom_add(user_id)
             
           end
         end
@@ -104,58 +105,46 @@ module Crystowl
 
   end
 
-  class Greeter < Tourmaline::Client
+  class ChatBotInstance < Tourmaline::Client
 
     HELP_TEXT = "Kommandos:\n/start - Fügt Artikel hinzu\n/check - Entfernt Artikel\n/help - Ruft diese Hilfe auf"
     ANSWER_TEXT = "Anfrage für Registrierung ist erfolgt."
 
     @@grocery_list = GroceryList.new
-    
-    # TODO: Make all of these user-specific!
-
-    @@user_message : Tourmaline::Message | Nil
-    @@message : Tourmaline::Message | Nil
-    @@menu : Tourmaline::Message | Nil
-
-    @@accepts_addition = false
 
     @@user_messages = {} of Int64 => Tourmaline::Message | Nil
     @@messages = {} of Int64 => Tourmaline::Message | Nil
     @@menus = {} of Int64 => Tourmaline::Message | Nil
 
-    @additions_enabled = {} of Int64 => Bool
+    @@additions_enabled = {} of Int64 => Bool
 
     def self.add_item(item, amount)
       @@grocery_list.add_item(item, amount)
     end
 
-    def self.update_message
+    def self.update_message(user_id)
       begin
-        @@message.try &. edit_text(@@grocery_list.dump)
+        @@messages[user_id].try &. edit_text(@@grocery_list.dump)
       rescue ex : Tourmaline::Error
         puts "ERROR: #{ex.message}"
       end
     end
 
-    def self.delete_message_and_menu
-      @@message.try &. delete
-      @@menu.try &. delete
+    def self.delete_message_and_menu(user_id)
+      @@messages[user_id].try &. delete
+      @@menus[user_id].try &. delete
     end
 
-    def self.send_command_message
-      @@user_message.try &. respond(HELP_TEXT)
+    def self.send_command_message(user_id)
+      @@user_messages[user_id].try &. respond(HELP_TEXT)
     end
 
-    def self.enable_custom_add
-      @@accepts_addition = true
+    def self.enable_custom_add(user_id)
+      @@additions_enabled[user_id] = true
     end
 
-    def self.disable_custom_add
-      @@accepts_addition = false
-    end
-
-    def self.is_custom_add
-      return @@accepts_addition
+    def self.disable_custom_add(user_id)
+      @@additions_enabled[user_id] = false if user_id
     end
 
     macro new_route(grocery_list, name, title, columns, items, 
@@ -287,10 +276,12 @@ module Crystowl
 
     @[Command("start")]
     def start_command(ctx)
-      @@user_message = ctx.message
-      @@message = ctx.message.respond("Lädt Liste...")
-      Greeter.update_message
-      @@menu = ctx.message.respond_with_menu(MENU)
+      if user_id = ctx.message.from.try &. id
+        @@user_messages[user_id] = ctx.message
+        @@messages[user_id] = ctx.message.respond("Lädt Liste...")
+        ChatBotInstance.update_message(user_id)
+        @@menus[user_id] = ctx.message.respond_with_menu(MENU)
+      end
     end
 
     @[Command("help")]
@@ -313,7 +304,8 @@ module Crystowl
 
     @[Hears(/^\s*([\w\-äöüÄÖÜßéèÈÉáàÀÁêÊ][\w\-äöüÄÖÜßÈÉáàÀÁêÊ\s]*)$/)]
     def on_addition(ctx)
-      if @@accepts_addition
+      user_id = ctx.message.from.try &. id
+      if @@additions_enabled[user_id]
         if text = ctx.message.text
           number = 1
           article = ""
@@ -328,8 +320,8 @@ module Crystowl
 
           @@grocery_list.add_item(article, number)
 
-          Greeter.disable_custom_add
-          Greeter.update_message
+          ChatBotInstance.disable_custom_add(user_id)
+          ChatBotInstance.update_message(user_id)
           ctx.message.delete
         end
       end
@@ -338,5 +330,5 @@ module Crystowl
   end
 end
 
-bot = Crystowl::Greeter.new(ENV["CRYSTOWL_API_KEY"])
+bot = Crystowl::ChatBotInstance.new(ENV["CRYSTOWL_API_KEY"])
 bot.poll
