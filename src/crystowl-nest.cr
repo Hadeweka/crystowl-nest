@@ -1,11 +1,21 @@
 require "tourmaline"
 require "tourmaline/extra/routed_menu"
 
+require "yaml"
+
 # TODO: Write documentation for `Crystowl`
 module Crystowl
 
   class GroceryList
+    include YAML::Serializable
+
+    @[YAML::Field(key: "lat")]
+    property content
+
     @content = {} of String => Int32
+
+    def initialize
+    end
 
     def dump
       str = "Liste:\n"
@@ -13,6 +23,10 @@ module Crystowl
         str += "#{index}: #{value}\n"
       end
       return str[0..4095]
+    end
+
+    def clear
+      @content.clear
     end
 
     def add_item(item, amount)
@@ -24,6 +38,10 @@ module Crystowl
         @content[cut_item] = amount
       end
       @content[cut_item].clamp(0..999)
+    end
+
+    def save(filename)
+      File.open(filename, "w") {|f| self.to_yaml(f)}
     end
 
   end
@@ -71,6 +89,8 @@ module Crystowl
           end
         end
 
+        ChatBotInstance.save
+
       end
     end
 
@@ -107,8 +127,14 @@ module Crystowl
 
   class ChatBotInstance < Tourmaline::Client
 
-    HELP_TEXT = "Kommandos:\n/start - Fügt Artikel hinzu\n/check - Entfernt Artikel\n/help - Ruft diese Hilfe auf"
+    HELP_TEXT = "Kommandos:\n/start - Fügt Artikel hinzu\n/check - Entfernt Artikel\n/register - Sendet Registrierungsanfrage\n/help - Ruft diese Hilfe auf"
+    NOT_WHITELIST_HELP_TEXT = "Kommandos:\n/register - Sendet Registrierungsanfrage"
     ANSWER_TEXT = "Anfrage für Registrierung ist erfolgt."
+    SAVE_FILE = "list.yml"
+
+    WHITE_LIST = {
+      304872237 => true
+    }
 
     @@grocery_list = GroceryList.new
 
@@ -145,6 +171,22 @@ module Crystowl
 
     def self.disable_custom_add(user_id)
       @@additions_enabled[user_id] = false if user_id
+    end
+
+    def self.is_in_whitelist?(user_id)
+      return WHITE_LIST[user_id]?
+    end
+
+    def self.save
+      @@grocery_list.save(SAVE_FILE)
+    end
+
+    def self.load
+      if File.exists?(SAVE_FILE)
+        @@grocery_list = File.open(SAVE_FILE) {|f| GroceryList.from_yaml(f)}
+      else 
+        @@grocery_list = GroceryList.new
+      end
     end
 
     macro new_route(grocery_list, name, title, columns, items, 
@@ -277,16 +319,24 @@ module Crystowl
     @[Command("start")]
     def start_command(ctx)
       if user_id = ctx.message.from.try &. id
-        @@user_messages[user_id] = ctx.message
-        @@messages[user_id] = ctx.message.respond("Lädt Liste...")
-        ChatBotInstance.update_message(user_id)
-        @@menus[user_id] = ctx.message.respond_with_menu(MENU)
+        if ChatBotInstance.is_in_whitelist?(user_id)
+          @@user_messages[user_id] = ctx.message
+          @@messages[user_id] = ctx.message.respond("Lädt Liste...")
+          ChatBotInstance.update_message(user_id)
+          @@menus[user_id] = ctx.message.respond_with_menu(MENU)
+        end
       end
     end
 
     @[Command("help")]
     def help_command(ctx)
-      ctx.message.respond(HELP_TEXT)
+      if user_id = ctx.message.from.try &. id
+        if ChatBotInstance.is_in_whitelist?(user_id)
+          ctx.message.respond(HELP_TEXT)
+        else
+          ctx.message.respond(NOT_WHITELIST_HELP_TEXT)
+        end
+      end
     end
 
     @[Command("register")]
@@ -302,27 +352,59 @@ module Crystowl
       end
     end
 
+    @[Command("reset")]
+    def reset_command(ctx)
+      user_id = ctx.message.from.try &. id
+      if ChatBotInstance.is_in_whitelist?(user_id)
+        @@grocery_list.clear
+        ctx.message.respond("Liste gelöscht.")
+      end
+    end
+
+    @[Command("reload")]
+    def reload_command(ctx)
+      user_id = ctx.message.from.try &. id
+      if ChatBotInstance.is_in_whitelist?(user_id)
+        ChatBotInstance.load
+        ctx.message.respond("Liste aus Cache geladen.")
+      end
+    end
+
+    @[Command("full_reset")]
+    def full_reset_command(ctx)
+      user_id = ctx.message.from.try &. id
+      if ChatBotInstance.is_in_whitelist?(user_id)
+        @@grocery_list.clear
+        ChatBotInstance.save
+        ctx.message.respond("Liste und Cache gelöscht.")
+      end
+    end
+
     @[Hears(/^\s*([\w\-äöüÄÖÜßéèÈÉáàÀÁêÊ][\w\-äöüÄÖÜßÈÉáàÀÁêÊ\s]*)$/)]
     def on_addition(ctx)
       user_id = ctx.message.from.try &. id
-      if @@additions_enabled[user_id]
-        if text = ctx.message.text
-          number = 1
-          article = ""
-          split_text = text.strip.split
-          
-          if split_text[-1].to_i?
-            number = split_text[-1].to_i
-            article = split_text[0..-2].join(" ")
-          else
-            article = split_text.join(" ")
+      if ChatBotInstance.is_in_whitelist?(user_id)
+        if @@additions_enabled[user_id]
+          if text = ctx.message.text
+            number = 1
+            article = ""
+            split_text = text.strip.split
+            
+            if split_text[-1].to_i?
+              number = split_text[-1].to_i
+              article = split_text[0..-2].join(" ")
+            else
+              article = split_text.join(" ")
+            end
+
+            @@grocery_list.add_item(article, number)
+
+            ChatBotInstance.disable_custom_add(user_id)
+            ChatBotInstance.update_message(user_id)
+            ChatBotInstance.save
+
+            ctx.message.delete
           end
-
-          @@grocery_list.add_item(article, number)
-
-          ChatBotInstance.disable_custom_add(user_id)
-          ChatBotInstance.update_message(user_id)
-          ctx.message.delete
         end
       end
     end
@@ -331,4 +413,5 @@ module Crystowl
 end
 
 bot = Crystowl::ChatBotInstance.new(ENV["CRYSTOWL_API_KEY"])
+Crystowl::ChatBotInstance.load
 bot.poll
