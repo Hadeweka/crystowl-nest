@@ -16,6 +16,7 @@ crystal build src/crystowl-nest.cr
 Run the program using:
 
 ```bash
+export CRYSTOWL_API_KEY=XXX:XXX
 ./crystowl-nest
 ```
 
