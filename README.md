@@ -1,18 +1,30 @@
 # crystowl-nest
 
-TODO: Write a description here
+Crystowl-Nest is a telegram bot which implements a shopping list.
 
 ## Installation
 
-TODO: Write installation instructions here
+Install crystal, download the repository and then execute the following commands in the folder:
+
+```bash
+shards install
+crystal build src/crystowl-nest.cr
+```
 
 ## Usage
 
-TODO: Write usage instructions here
+Run the program using:
 
-## Development
+```bash
+./crystowl-nest
+```
 
-TODO: Write development instructions here
+## Features:
+
+* [X] Shopping list creator
+* [X] Whitelist
+* [ ] Checklist
+* [X] Cache
 
 ## Contributing
 
