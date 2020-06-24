@@ -17,8 +17,22 @@ Run the program using:
 
 ```bash
 export CRYSTOWL_API_KEY=XXX:XXX
-./crystowl-nest
+./crystowl-nest CONFIG_NAME
 ```
+
+Replace ```XXX:XXX``` with the Telegram bot API key and ```CONFIG_NAME``` with the name of your configuration.
+
+Make also sure to create a whitelist with the following content:
+
+```yaml
+---
+content:
+  XXXXXXXXX : true
+  YYYYYYYYY : true
+```
+
+Here, ```XXXXXXXXX``` and ```YYYYYYYYY``` are Telegram user IDs of users you want to allow access to the bot.
+You can get these IDs by sending a ```/replace``` command to the bot and checking the command line standard output.
 
 ## Features:
 

@@ -9,7 +9,7 @@ module Crystowl
   class GroceryList
     include YAML::Serializable
 
-    @[YAML::Field(key: "lat")]
+    @[YAML::Field(key: "content")]
     property content
 
     @content = {} of String => Int32
@@ -19,7 +19,8 @@ module Crystowl
 
     def dump
       str = "Liste:\n"
-      @content.each do |index, value|
+      @content.keys.sort.each do |index|
+        value = @content[index]
         str += "#{index}: #{value}\n"
       end
       return str[0..4095]
@@ -42,6 +43,19 @@ module Crystowl
 
     def save(filename)
       File.open(filename, "w") {|f| self.to_yaml(f)}
+    end
+
+  end
+
+  class Whitelist
+    include YAML::Serializable
+
+    @[YAML::Field(key: "content")]
+    property content
+
+    @content = {} of Int64 => Bool
+
+    def initialize
     end
 
   end
@@ -130,11 +144,10 @@ module Crystowl
     HELP_TEXT = "Kommandos:\n/start - Fügt Artikel hinzu\n/check - Entfernt Artikel\n/register - Sendet Registrierungsanfrage\n/help - Ruft diese Hilfe auf"
     NOT_WHITELIST_HELP_TEXT = "Kommandos:\n/register - Sendet Registrierungsanfrage"
     ANSWER_TEXT = "Anfrage für Registrierung ist erfolgt."
-    SAVE_FILE = "list.yml"
-
-    WHITE_LIST = {
-      304872237 => true
-    }
+    
+    SAVE_FILE = "configs/list_"
+    WHITELIST_FILE = "configs/whitelist_"
+    FILE_ENDING = ".yml"
 
     @@grocery_list = GroceryList.new
 
@@ -144,25 +157,33 @@ module Crystowl
 
     @@additions_enabled = {} of Int64 => Bool
 
+    @@whitelist = Whitelist.new
+
     def self.add_item(item, amount)
       @@grocery_list.add_item(item, amount)
     end
 
     def self.update_message(user_id)
-      begin
-        @@messages[user_id].try &. edit_text(@@grocery_list.dump)
-      rescue ex : Tourmaline::Error
-        puts "ERROR: #{ex.message}"
+      if @@messages[user_id]?
+        begin
+          @@messages[user_id].try &. edit_text(@@grocery_list.dump)
+        rescue ex : Tourmaline::Error
+          puts "ERROR: #{ex.message}"
+        end
       end
     end
 
     def self.delete_message_and_menu(user_id)
-      @@messages[user_id].try &. delete
-      @@menus[user_id].try &. delete
+      if @@messages[user_id]?
+        @@messages[user_id].try &. delete
+        @@menus[user_id].try &. delete
+      end
     end
 
     def self.send_command_message(user_id)
-      @@user_messages[user_id].try &. respond(HELP_TEXT)
+      if @@user_messages[user_id]?
+        @@user_messages[user_id].try &. respond(HELP_TEXT)
+      end
     end
 
     def self.enable_custom_add(user_id)
@@ -174,19 +195,34 @@ module Crystowl
     end
 
     def self.is_in_whitelist?(user_id)
-      return WHITE_LIST[user_id]?
+      return @@whitelist.content[user_id]?
     end
 
     def self.save
       @@grocery_list.save(SAVE_FILE)
     end
 
-    def self.load
-      if File.exists?(SAVE_FILE)
-        @@grocery_list = File.open(SAVE_FILE) {|f| GroceryList.from_yaml(f)}
+    def self.load_list(name)
+      if File.exists?(SAVE_FILE + name + FILE_ENDING)
+        @@grocery_list = File.open(SAVE_FILE + name + FILE_ENDING) {|f| GroceryList.from_yaml(f)}
       else 
         @@grocery_list = GroceryList.new
       end
+    end
+
+    def self.load_whitelist(name)
+      if File.exists?(WHITELIST_FILE + name + FILE_ENDING)
+        @@whitelist = File.open(WHITELIST_FILE + name + FILE_ENDING) {|f| Whitelist.from_yaml(f)}
+      end
+    end
+
+    def self.load
+      name = "DEFAULT"
+      if ARGV[0]?
+        name = ARGV[0]
+      end
+      self.load_list(name)
+      self.load_whitelist(name)
     end
 
     macro new_route(grocery_list, name, title, columns, items, 
@@ -380,7 +416,7 @@ module Crystowl
       end
     end
 
-    @[Hears(/^\s*([\w\-äöüÄÖÜßéèÈÉáàÀÁêÊ][\w\-äöüÄÖÜßÈÉáàÀÁêÊ\s]*)$/)]
+    @[Hears(/^\s*([\w\-äöüÄÖÜßéèÈÉáàÀÁêÊ][\w\-äöüÄÖÜßéèÈÉáàÀÁêÊ\s]*)$/)]
     def on_addition(ctx)
       user_id = ctx.message.from.try &. id
       if ChatBotInstance.is_in_whitelist?(user_id)
