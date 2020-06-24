@@ -31,6 +31,8 @@ content:
   YYYYYYYYY : true
 ```
 
+Save it as ```whitelist_CONFIG_NAME.yml``` in a folder called ```configs```.
+
 Here, ```XXXXXXXXX``` and ```YYYYYYYYY``` are Telegram user IDs of users you want to allow access to the bot.
 You can get these IDs by sending a ```/replace``` command to the bot and checking the command line standard output.
 
