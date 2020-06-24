@@ -143,7 +143,7 @@ module Crystowl
 
     HELP_TEXT = "Kommandos:\n/start - Fügt Artikel hinzu\n/check - Entfernt Artikel\n/register - Sendet Registrierungsanfrage\n/help - Ruft diese Hilfe auf"
     NOT_WHITELIST_HELP_TEXT = "Kommandos:\n/register - Sendet Registrierungsanfrage"
-    ANSWER_TEXT = "Anfrage für Registrierung ist erfolgt."
+    ANSWER_TEXT = "Anfrage für Registrierung ist erfolgt. Deine ID: "
     
     SAVE_FILE = "configs/list_"
     WHITELIST_FILE = "configs/whitelist_"
@@ -384,7 +384,7 @@ module Crystowl
         end
         puts "Name: " + user.try &. full_name
         puts "ID: " + user.try &. id.to_s
-        ctx.message.respond(ANSWER_TEXT)
+        ctx.message.respond(ANSWER_TEXT + user.try &. id.to_s)
       end
     end
 
