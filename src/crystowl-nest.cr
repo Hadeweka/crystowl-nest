@@ -4,6 +4,11 @@ require "tourmaline/extra/routed_menu"
 require "yaml"
 
 # TODO: Write documentation for `Crystowl`
+# TODO: Checking feature
+# TODO: Tainting feature preventing unnecessary updates
+# TODO: Better exception handling and recovery
+# TODO: Pass API key as command line argument
+
 module Crystowl
 
   class GroceryList
