@@ -36,6 +36,8 @@ Save it as ```whitelist_CONFIG_NAME.yml``` in a folder called ```configs```.
 Here, ```XXXXXXXXX``` and ```YYYYYYYYY``` are Telegram user IDs of users you want to allow access to the bot.
 You can get these IDs by sending a ```/replace``` command to the bot and checking the command line standard output.
 
+Currently, the bot texts are written in German. To translate them, edit them in ```src/crystowl-nest.cr``` to your liking.
+
 ## Features:
 
 * [X] Shopping list creator
