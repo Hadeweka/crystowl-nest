@@ -46,6 +46,19 @@ module Crystowl
       @content[cut_item].clamp(0..999)
     end
 
+    def remove_item(item, all = false, amount = 1)
+      cut_item = item[0..99]
+
+      if all
+        @content.delete(cut_item)
+      else
+        @content[cut_item] -= amount
+        if @content[cut_item] <= 0
+          @content.delete(cut_item)
+        end
+      end
+    end
+
     def save(filename)
       File.open(filename, "w") {|f| self.to_yaml(f)}
     end
@@ -70,6 +83,7 @@ module Crystowl
     def initialize(@routes = {} of String => Page,
                    start_route = "/",
                    group = Tourmaline::Helpers.random_string(8))
+                   
       @current_route = self.class.hash_route(start_route)
       @route_history = [@current_route]
       @event_handler = Tourmaline::CallbackQueryHandler.new(/(?:amount|route|final|refresh|custom):(\S+)/, group: group) do |ctx|
@@ -104,6 +118,9 @@ module Crystowl
           elsif command == "custom"
             ctx.query.answer("Bitte Namen des Artikels eingeben")
             ChatBotInstance.enable_custom_add(user_id)
+
+          else 
+            puts "Invalid handle: #{command}"
             
           end
         end
@@ -111,6 +128,8 @@ module Crystowl
         ChatBotInstance.save
 
       end
+
+      @event_handler.unique = true
     end
 
     def format_text_addition(item, amount)
@@ -144,6 +163,134 @@ module Crystowl
 
   end
 
+  class CheckMenu < Tourmaline::RoutedMenu
+
+    def initialize(@routes = {} of String => Page,
+                   start_route = "/",
+                   group = Tourmaline::Helpers.random_string(8))
+
+      @current_route = self.class.hash_route(start_route)
+      @route_history = [@current_route]
+      @event_handler = Tourmaline::CallbackQueryHandler.new(/(?:remove_one|remove_all|route|final|refresh):(.+)/, group: group) do |ctx|
+
+        user_id = ctx.query.from.id
+
+        if match = ctx.match
+          command = match[0].split(":")[0]
+          
+          if command == "remove_one"
+            item = match[1]
+            ChatBotInstance.remove_item(item, amount: 1)
+            refresh(ctx)
+
+            pseudo_handle(ctx)
+
+          elsif command == "remove_all"
+            item = match[1]
+            ChatBotInstance.remove_item(item, all: true)
+            refresh(ctx)
+
+          elsif command == "route"
+            handle_button_click(ctx)
+
+          elsif command == "final"
+            ChatBotInstance.delete_message_and_menu(user_id)
+            ChatBotInstance.send_command_message(user_id)
+
+
+          elsif command == "refresh"
+            refresh(ctx)
+
+          else 
+            puts "Invalid handle: #{command}"
+            
+          end
+        end
+
+        ChatBotInstance.save
+
+      end
+      @event_handler.unique = true
+
+    end
+
+    def format_text_remove(item, amount)
+      return "#{amount} x #{item} entfernt."
+    end
+
+    def refresh(ctx)
+      current_page.buttons.inline_keyboard = Array(Array(Tourmaline::InlineKeyboardButton)).new
+
+      ChatBotInstance.grocery_list.content.keys.sort.each do |index|
+        row = Array(Tourmaline::InlineKeyboardButton).new
+        current_page.buttons.inline_keyboard.push(row)
+
+        value = ChatBotInstance.grocery_list.content[index]
+
+        all_button = Tourmaline::InlineKeyboardButton.new(text: "#{index}", callback_data: "remove_all:#{index}")
+        one_button = Tourmaline::InlineKeyboardButton.new(text: "#{value}", callback_data: "remove_one:#{index}")
+
+        row.push(all_button)
+        row.push(one_button)
+      end
+
+      row = Array(Tourmaline::InlineKeyboardButton).new
+      current_page.buttons.inline_keyboard.push(row)
+
+      refresh_button = Tourmaline::InlineKeyboardButton.new(text: "Update", callback_data: "refresh:true")
+      final_button = Tourmaline::InlineKeyboardButton.new(text: "Fertig", callback_data: "final:true")
+
+      row.push(refresh_button)
+      row.push(final_button)
+
+      ChatBotInstance.update_menu(current_page, ctx.query.from.id)
+    end
+
+    def pseudo_handle(ctx)
+      route = ""
+
+      if (message = ctx.query.message)
+        if @route_history.size > 1
+          route_history.pop
+          route = route_history.pop
+        else
+          return ctx.query.answer("No page to go back to")
+        end
+
+        if page = @routes[route]?
+          @current_route = route
+          route_history << route
+          message.edit_text(page.content,
+                            reply_markup: page.buttons,
+                            parse_mode: page.parse_mode,
+                            disable_link_preview: !page.link_preview)
+          ctx.query.answer
+        else
+          ctx.query.answer("Route not found")
+        end
+      end
+    end
+
+  end
+
+  class Tourmaline::EventHandler
+    property unique = false
+  end
+
+  class Tourmaline::Client
+    def send_menu(chat, menu : Tourmaline::RoutedMenu, **kwargs)
+      chat_id = chat.is_a?(Chat) ? chat.id : chat
+
+      # We don't need any other handlers here
+      event_handlers.reject! {|handler| handler.unique}
+
+      add_event_handler(menu.event_handler)
+
+      start_page = menu.current_page
+      send_message(chat_id, start_page.content, **kwargs, reply_markup: start_page.buttons, parse_mode: start_page.parse_mode)
+    end
+  end
+
   class ChatBotInstance < Tourmaline::Client
 
     HELP_TEXT = "Kommandos:\n/start - Fügt Artikel hinzu\n/check - Entfernt Artikel\n/register - Sendet Registrierungsanfrage\n/help - Ruft diese Hilfe auf"
@@ -164,8 +311,16 @@ module Crystowl
 
     @@whitelist = Whitelist.new
 
+    def self.grocery_list
+      return @@grocery_list
+    end
+
     def self.add_item(item, amount)
       @@grocery_list.add_item(item, amount)
+    end
+
+    def self.remove_item(item, all = false, amount = 1)
+      @@grocery_list.remove_item(item, all: all, amount: amount)
     end
 
     def self.update_message(user_id)
@@ -181,7 +336,12 @@ module Crystowl
     def self.delete_message_and_menu(user_id)
       if @@messages[user_id]?
         @@messages[user_id].try &. delete
+        @@messages.delete(user_id)
+      end
+      
+      if @@menus[user_id]?
         @@menus[user_id].try &. delete
+        @@menus.delete(user_id)
       end
     end
 
@@ -204,30 +364,43 @@ module Crystowl
     end
 
     def self.save
-      @@grocery_list.save(SAVE_FILE)
+      puts "Saving to #{SAVE_FILE + self.get_name + FILE_ENDING}"
+      @@grocery_list.save(SAVE_FILE + self.get_name + FILE_ENDING)
     end
 
-    def self.load_list(name)
-      if File.exists?(SAVE_FILE + name + FILE_ENDING)
-        @@grocery_list = File.open(SAVE_FILE + name + FILE_ENDING) {|f| GroceryList.from_yaml(f)}
+    def self.load_list
+      if File.exists?(SAVE_FILE + self.get_name + FILE_ENDING)
+        @@grocery_list = File.open(SAVE_FILE + self.get_name + FILE_ENDING) {|f| GroceryList.from_yaml(f)}
       else 
         @@grocery_list = GroceryList.new
       end
     end
 
-    def self.load_whitelist(name)
-      if File.exists?(WHITELIST_FILE + name + FILE_ENDING)
-        @@whitelist = File.open(WHITELIST_FILE + name + FILE_ENDING) {|f| Whitelist.from_yaml(f)}
+    def self.load_whitelist
+      if File.exists?(WHITELIST_FILE + self.get_name + FILE_ENDING)
+        @@whitelist = File.open(WHITELIST_FILE + self.get_name + FILE_ENDING) {|f| Whitelist.from_yaml(f)}
       end
     end
 
-    def self.load
+    def self.get_name
       name = "DEFAULT"
       if ARGV[0]?
         name = ARGV[0]
       end
-      self.load_list(name)
-      self.load_whitelist(name)
+      return name
+    end
+
+    def self.load
+      self.load_list
+      self.load_whitelist
+    end
+
+    def self.update_menu(page, user_id)
+      begin
+        @@menus[user_id].try &. edit_text(page.content, reply_markup: page.buttons, parse_mode: page.parse_mode, disable_link_preview: !page.link_preview)
+      rescue ex : Tourmaline::Error
+        puts "ERROR: #{ex.message}"
+      end
     end
 
     macro new_route(grocery_list, name, title, columns, items, 
@@ -365,6 +538,35 @@ module Crystowl
           @@messages[user_id] = ctx.message.respond("Lädt Liste...")
           ChatBotInstance.update_message(user_id)
           @@menus[user_id] = ctx.message.respond_with_menu(MENU)
+        end
+      end
+    end
+
+    @[Command("check")]
+    def check_command(ctx)
+      if user_id = ctx.message.from.try &. id
+        if ChatBotInstance.is_in_whitelist?(user_id)
+          @@user_messages[user_id] = ctx.message
+          @@messages[user_id] = nil
+
+          checklist = CheckMenu.build do
+            route "/" do 
+              content "Einkaufsliste"
+
+              buttons(columns: 2) do
+                @@grocery_list.content.keys.sort.each do |index|
+                  value = @@grocery_list.content[index]
+                  callback_button "#{index}", "remove_all:#{index}"
+                  callback_button "#{value}", "remove_one:#{index}"
+                end
+                callback_button "Update", "refresh:true"
+                callback_button "Fertig", "final:true"
+              end
+
+            end
+          end
+
+          @@menus[user_id] = ctx.message.respond_with_menu(checklist)
         end
       end
     end
