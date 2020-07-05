@@ -16,8 +16,7 @@ crystal build src/crystowl-nest.cr
 Run the program using:
 
 ```bash
-export CRYSTOWL_API_KEY=XXX:XXX
-./crystowl-nest CONFIG_NAME
+./crystowl-nest XXX:XXX CONFIG_NAME
 ```
 
 Replace ```XXX:XXX``` with the Telegram bot API key and ```CONFIG_NAME``` with the name of your configuration.
@@ -42,7 +41,7 @@ Currently, the bot texts are written in German. To translate them, edit them in 
 
 * [X] Shopping list creator
 * [X] Whitelist
-* [ ] Checklist
+* [X] Checklist
 * [X] Cache
 
 ## Contributing

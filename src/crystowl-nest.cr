@@ -4,10 +4,11 @@ require "tourmaline/extra/routed_menu"
 require "yaml"
 
 # TODO: Write documentation for `Crystowl`
-# TODO: Checking feature
 # TODO: Tainting feature preventing unnecessary updates
 # TODO: Better exception handling and recovery
-# TODO: Pass API key as command line argument
+# TODO: Log file
+# TODO: Load groceries from file
+# TODO: Load language details from file
 
 module Crystowl
 
@@ -364,7 +365,6 @@ module Crystowl
     end
 
     def self.save
-      puts "Saving to #{SAVE_FILE + self.get_name + FILE_ENDING}"
       @@grocery_list.save(SAVE_FILE + self.get_name + FILE_ENDING)
     end
 
@@ -384,8 +384,8 @@ module Crystowl
 
     def self.get_name
       name = "DEFAULT"
-      if ARGV[0]?
-        name = ARGV[0]
+      if ARGV[1]?
+        name = ARGV[1]
       end
       return name
     end
@@ -613,6 +613,15 @@ module Crystowl
       end
     end
 
+    @[Command("reload_whitelist")]
+    def reload_whitelist_command(ctx)
+      user_id = ctx.message.from.try &. id
+      if ChatBotInstance.is_in_whitelist?(user_id)
+        ChatBotInstance.load_whitelist
+        ctx.message.respond("Whitelist geupdated.")
+      end
+    end
+
     @[Command("full_reset")]
     def full_reset_command(ctx)
       user_id = ctx.message.from.try &. id
@@ -655,6 +664,11 @@ module Crystowl
   end
 end
 
-bot = Crystowl::ChatBotInstance.new(ENV["CRYSTOWL_API_KEY"])
-Crystowl::ChatBotInstance.load
-bot.poll
+if ARGV[0]?
+  bot = Crystowl::ChatBotInstance.new(ARGV[0])
+  Crystowl::ChatBotInstance.load
+  bot.poll
+else
+  puts "Usage: ./crystowl-nest [API Key] [Config name]"
+  raise "API Key missing"
+end

@@ -157,11 +157,10 @@ Debug versions might yield lengthy weird error messages for some reason, so just
 
 ## Running it
 
-Set your Telegram Bot API Key (replace ```XXX:XXX``` with the actual key here) and run it:
+Set your Telegram Bot API Key (replace ```XXX:XXX``` with the actual key and ```CONFIG_NAME``` with the name of your own configuration) and run it:
 
 ```console
-user@raspbian:~/Dev/crystowl-nest$ export CRYSTOWL_API_KEY=XXX:XXX
-user@raspbian:~/Dev/crystowl-nest$ ./crystowl-nest
+user@raspbian:~/Dev/crystowl-nest$ ./crystowl-nest XXX:XXX CONFIG_NAME
 ```
 
 Done!
